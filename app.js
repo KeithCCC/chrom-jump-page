@@ -228,8 +228,7 @@ function selectCard(card, node) {
   }, true);
   card.draggable = !state.busy;
   card.addEventListener('dragstart', event => {
-    // Keep the original pinned-card reorder gesture when nothing is selected.
-    if (!state.selecting && card.classList.contains('pin-card')) return;
+    if (!state.selecting) return;
     if (state.busy) { event.preventDefault(); return; }
     if (!state.selectedIds.has(node.id)) state.selectedIds.add(node.id);
     event.dataTransfer.setData('application/x-tabnest-selection', JSON.stringify({token: state.dragToken, ids: [...state.selectedIds]}));
@@ -559,6 +558,70 @@ function renderPinned() {
   el.pins.replaceChildren(fragment);
 }
 
+const reorderType = 'application/x-tabnest-reorder';
+
+async function reorderBookmark(parentId, sourceId, targetId, after) {
+  state.busy = true;
+  try {
+    if (!await loadTree({force: true})) throw new Error('Could not refresh bookmarks');
+    const siblings = state.nodes.get(parentId)?.children || [];
+    const sourceIndex = siblings.findIndex(node => node.id === sourceId);
+    const targetIndex = siblings.findIndex(node => node.id === targetId);
+    if (targetIndex < 0 || !canModify(siblings[sourceIndex])) {
+      throw new Error('Bookmark is no longer movable within this folder');
+    }
+    // Chrome interprets the insertion index before removing the source.
+    const index = targetIndex + Number(after);
+    if (index !== sourceIndex && index !== sourceIndex + 1) {
+      await chrome.bookmarks.move(sourceId, {parentId, index});
+    }
+  } catch (error) {
+    console.error('Bookmark reorder failed:', error);
+    toast('並べ替えを保存できませんでした。');
+  } finally {
+    state.busy = false;
+    if (!await loadTree()) render();
+  }
+}
+
+function enableBookmarkReorder(card, node) {
+  const parentId = node.parentId;
+  if (!canModify(node) || parentId !== state.view) return;
+  card.draggable = true;
+  const accepts = event => !state.busy && !state.selecting && !state.query.trim() &&
+    state.view === parentId && event.dataTransfer.types.includes(reorderType);
+  const isAfter = event => {
+    const bounds = card.getBoundingClientRect();
+    return event.clientX >= bounds.left + bounds.width / 2;
+  };
+  const clear = () => delete card.dataset.insert;
+  card.addEventListener('dragstart', event => {
+    event.dataTransfer.setData(reorderType, state.dragToken + ':' + node.id);
+    event.dataTransfer.effectAllowed = 'move';
+  });
+  card.addEventListener('dragover', event => {
+    if (!accepts(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    card.dataset.insert = isAfter(event) ? 'after' : 'before';
+  });
+  card.addEventListener('dragleave', event => {
+    if (!card.contains(event.relatedTarget)) clear();
+  });
+  card.addEventListener('dragend', () => {
+    el.bookmarks.querySelectorAll('[data-insert]').forEach(target => delete target.dataset.insert);
+  });
+  card.addEventListener('drop', event => {
+    clear();
+    if (!accepts(event)) return;
+    event.preventDefault();
+    const [token, sourceId] = event.dataTransfer.getData(reorderType).split(':');
+    if (token === state.dragToken && sourceId && sourceId !== node.id) {
+      void reorderBookmark(parentId, sourceId, node.id, isAfter(event));
+    }
+  });
+}
+
 function renderBrowse() {
   const query = state.query.trim().toLocaleLowerCase();
   const searching = !!query;
@@ -592,7 +655,12 @@ function renderBrowse() {
       fragment.append(emptyState(searching ? '一致するブックマークはありません' : 'この場所には何もありません', searching ? '別のキーワードで検索してください。' : '「追加する」でサイトを登録できます。'));
     }
   }
-  for (const item of subset) fragment.append(item.url ? bookmarkCard(item) : folderCard(item));
+  const canReorder = !searching && state.view !== 'all' && !state.selecting && !state.busy;
+  for (const item of subset) {
+    const card = item.url ? bookmarkCard(item) : folderCard(item);
+    if (canReorder) enableBookmarkReorder(card, item);
+    fragment.append(card);
+  }
   el.bookmarks.replaceChildren(fragment);
   el.more.hidden = items.length <= state.visibleLimit;
   el.more.textContent = `さらに表示 (${items.length - state.visibleLimit}件)`;

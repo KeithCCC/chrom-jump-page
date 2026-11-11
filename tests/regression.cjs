@@ -53,12 +53,16 @@ async function open(roots, prefs = {}, options = {}) {
         if (options.readFails) throw new Error('Read failed');
         return structuredClone(roots);
       },
-      move: async (id, { parentId }) => {
+      move: async (id, { parentId, index }) => {
         fail(id);
         const destination = find(parentId);
         if (!destination || destination.url) throw new Error('Invalid destination');
+        const source = find(id);
+        const previousIndex = source.parentId === parentId ? destination.children.indexOf(source) : -1;
         const node = detach(id); node.parentId = parentId;
-        (destination.children ||= []).push(node);
+        const children = destination.children ||= [];
+        const insertion = index === undefined ? children.length : index - Number(previousIndex >= 0 && previousIndex < index);
+        children.splice(insertion, 0, node);
         listeners.onMoved?.();
         return structuredClone(node);
       },
@@ -85,6 +89,30 @@ async function open(roots, prefs = {}, options = {}) {
   return { w, doc: w.document, prefs, listeners, find, confirmations, close: () => dom.window.close() };
 }
 const cards = doc => [...doc.querySelectorAll('#bookmarkGrid .bookmark-title')].map(n => n.textContent);
+
+test('folder drag saves the order in Chrome across hidden siblings', async t => {
+  const roots = tree();
+  const bar = roots[0].children[1];
+  bar.children.splice(1, 0, { ...link('99', '1', 'Hidden'), url: 'javascript:void(0)' });
+  const app = await open(roots); t.after(app.close);
+  const card = id => app.doc.querySelector(`#bookmarkGrid [data-id="${id}"]`);
+  const data = new Map();
+  const transfer = { setData: (type, value) => data.set(type, value), getData: type => data.get(type),
+    get types() { return [...data.keys()]; } };
+  const dispatch = (id, type, clientX) => {
+    const event = new app.w.MouseEvent(type, { bubbles: true, cancelable: true, clientX });
+    Object.defineProperty(event, 'dataTransfer', { value: transfer });
+    card(id).dispatchEvent(event);
+    return event;
+  };
+  dispatch('10', 'dragstart', 1);
+  assert.equal(dispatch('11', 'dragover', 1).defaultPrevented, true);
+  assert.equal(card('11').dataset.insert, 'after');
+  dispatch('11', 'drop', 1);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.deepEqual(bar.children.map(node => node.id), ['99', '11', '10']);
+  assert.deepEqual(cards(app.doc), ['Subfolder', 'Bar site']);
+});
 const nav = (doc, label) => [...doc.querySelectorAll('.nav-entry')].find(n => n.querySelector('.nav-name').textContent === label);
 
 for (const title of ['ブックマーク バー', 'Bookmarks bar', 'Lesezeichenleiste']) {

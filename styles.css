@@ -13,3 +13,14 @@ button:disabled{cursor:default;opacity:.45}.danger-button{color:#b83e52;border-c
 .card-selection{position:absolute;top:7px;right:9px;z-index:2;display:flex;align-items:center;gap:5px;min-height:28px;padding:3px 6px;border:1px solid var(--border);border-radius:7px;background:var(--panel);color:var(--muted);font-size:11px;font-weight:700;cursor:pointer;user-select:none}.card-selection:hover{border-color:var(--accent);color:var(--accent)}.is-selected .card-selection{color:var(--accent);border-color:var(--accent)}.item-select{position:static;width:15px;height:15px;margin:0;accent-color:var(--accent);cursor:pointer}.selectable .bookmark-link,.selectable .folder-link{padding-right:84px;min-height:88px}.selectable .pin-link{padding-top:40px}.bookmark-card.selectable .card-star,.bookmarks-grid.compact .bookmark-card.selectable .card-star{top:auto;right:17px;bottom:7px}.selectable .folder-chevron{top:auto;right:20px;bottom:10px}.bookmarks-grid.compact .selectable .bookmark-link,.bookmarks-grid.compact .selectable .folder-link{min-height:78px}.selection-mode .card-star{opacity:1}
 body.dark .danger-button{color:#ffadba;border-color:#865365}body.dark .danger-button:hover:enabled{background:#442e3b}
 @media(max-width:620px){body.selection-mode .side-scroll{display:block;max-height:260px}body.selection-mode .side-caption-folders{margin-top:8px}.bulk-toolbar{position:sticky;top:8px}.bulk-actions{gap:7px}.bulk-actions strong{width:100%}}
+.bookmarks-grid [data-insert]::after {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  pointer-events: none;
+}
+.bookmarks-grid [data-insert="before"]::after { left: -7px; }
+.bookmarks-grid [data-insert="after"]::after { right: -7px; }
