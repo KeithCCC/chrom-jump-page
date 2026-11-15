@@ -58,20 +58,18 @@
         </header>
 
         <section class="hero" aria-label="ダッシュボード">
-          <div class="hero-top"><span class="eyebrow"><span class="eyebrow-line"></span> YOUR EVERYDAY LAUNCHPAD</span><span class="today" id="dateLabel"></span></div>
-          <div class="hero-main"><div><h1>今日も、ここから<span class="period">。</span></h1><p class="hero-desc">よく使うサイトへ、迷わずワンクリック。</p></div><div class="hero-decoration" aria-hidden="true"><span class="orbit orbit-a"></span><span class="orbit orbit-b"></span><span class="orbit-core"></span></div></div>
+          <div class="hero-top"><h1>今日も、ここから<span class="period">。</span></h1><span class="today" id="dateLabel"></span></div>
           <div class="hero-search"><svg class="icon"><use href="#ic-search"/></svg><input id="searchInput" type="search" placeholder="サイト名・URLからブックマークを検索..." autocomplete="off" spellcheck="false" aria-label="ブックマークを検索"><kbd>Ctrl K</kbd></div>
+          <section id="pinnedSection" class="pinned-shortcuts" aria-labelledby="pinnedHeading" hidden>
+            <h2 id="pinnedHeading">ピン留め <span class="counter" id="pinnedCount">0</span></h2>
+            <div id="pinnedGrid" class="pins-grid"></div>
+          </section>
         </section>
 
         <section id="bulkToolbar" class="bulk-toolbar" aria-label="選択項目の操作" aria-busy="false" hidden>
           <div class="bulk-actions"><strong id="selectionCount" aria-live="polite">0件選択中</strong><button id="selectAllBtn" class="outline-button" type="button">表示中を選択</button><button id="clearSelectionBtn" class="outline-button" type="button" disabled>選択を解除</button><button id="editSelectedBtn" class="outline-button" type="button" disabled>編集</button><button id="deleteSelectedBtn" class="outline-button danger-button" type="button" disabled>選択項目を削除</button></div>
-          <p class="bulk-help">各カードの「選択」で複数選択。左のフォルダへドラッグ、または「ここへ移動」でまとめて移動できます。編集は1件選択時に使えます。</p>
+          <p class="bulk-help">左または右のフォルダへドラッグするとまとめて移動できます。左の「ここへ移動」も使えます。</p>
           <div id="bulkStatus" class="bulk-status" role="status" aria-live="polite"></div>
-        </section>
-
-        <section id="pinnedSection" class="content-section" hidden>
-          <div class="section-heading"><div><div class="section-kicker">YOUR SHORTCUTS</div><h2><span class="title-symbol star-symbol">✦</span> ピン留め <span class="counter" id="pinnedCount">0</span></h2></div><span class="section-hint">ドラッグして並べ替えられます</span></div>
-          <div id="pinnedGrid" class="pins-grid"></div>
         </section>
 
         <section id="browseSection" class="content-section browse-section">

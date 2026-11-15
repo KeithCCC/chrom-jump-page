@@ -1,6 +1,6 @@
 'use strict';
 
-/** TabNest v1.1.1: no third-party runtime dependencies or outbound requests. */
+/** TabNest has no third-party runtime dependencies or outbound requests. */
 const $ = (selector) => document.querySelector(selector);
 const state = {
   roots: [],
@@ -182,10 +182,10 @@ function isWithin(id, ancestorId) {
   return false;
 }
 
-function canMoveTo(id) {
+function canMoveTo(id, sourceIds = state.selectedIds) {
   const target = state.nodes.get(id);
   return !!target && !target.url && !!target.parentId && !isManaged(target) &&
-    [...state.selectedIds].every(selectedId => !isWithin(id, selectedId));
+    [...sourceIds].every(sourceId => !isWithin(id, sourceId));
 }
 
 function toggleSelection(id) {
@@ -226,12 +226,18 @@ function selectCard(card, node) {
     event.stopPropagation();
     toggleSelection(node.id);
   }, true);
-  card.draggable = !state.busy;
+  card.draggable = !state.busy && (state.selecting || !!node.url);
   card.addEventListener('dragstart', event => {
-    if (!state.selecting) return;
     if (state.busy) { event.preventDefault(); return; }
+    if (!state.selecting) {
+      if (node.url) {
+        event.dataTransfer.setData(bookmarkMoveType, `${state.dragToken}:${node.id}`);
+        event.dataTransfer.effectAllowed = 'move';
+      }
+      return;
+    }
     if (!state.selectedIds.has(node.id)) state.selectedIds.add(node.id);
-    event.dataTransfer.setData('application/x-tabnest-selection', JSON.stringify({token: state.dragToken, ids: [...state.selectedIds]}));
+    event.dataTransfer.setData(selectionMoveType, JSON.stringify({token: state.dragToken, ids: [...state.selectedIds]}));
     event.dataTransfer.setData('text/plain', [...state.selectedIds].join(','));
     event.dataTransfer.effectAllowed = 'move';
     // Keep the source card in the DOM throughout the native drag operation.
@@ -241,6 +247,9 @@ function selectCard(card, node) {
     });
     state.selecting = state.selectedIds.size > 0;
     renderNav(); renderSelection();
+  });
+  card.addEventListener('dragend', () => {
+    el.bookmarks.querySelectorAll('.drop-target').forEach(target => target.classList.remove('drop-target'));
   });
 }
 
@@ -256,18 +265,18 @@ function renderSelection() {
   el.editSelected.disabled = state.busy || state.selectedIds.size !== 1;
 }
 
-async function operateSelection(action, destinationId) {
-  if (state.busy || !state.selectedIds.size) return;
+async function operateSelection(action, destinationId, draggedId) {
+  if (state.busy || (!draggedId && !state.selectedIds.size)) return;
   state.busy = true;
   render();
   try {
     // Revalidate against Chrome immediately before changing bookmarks.
     if (!await loadTree({force: true})) throw new Error('最新のブックマークを確認できませんでした。もう一度お試しください。');
-    const selected = [...state.selectedIds];
+    const selected = draggedId ? [draggedId] : [...state.selectedIds];
     const nodes = selected.map(id => state.nodes.get(id)).filter(node => canModify(node));
     const top = nodes.filter(node => !nodes.some(other => other.id !== node.id && isWithin(node.id, other.id)));
     if (!top.length) { el.bulkStatus.textContent = '選択項目は既に削除または変更されています。'; return; }
-    if (action === 'move' && !canMoveTo(destinationId)) {
+    if (action === 'move' && !canMoveTo(destinationId, selected)) {
       throw new Error('このフォルダへは移動できません。自分自身・配下のフォルダや管理対象フォルダは選べません。');
     }
     if (action === 'delete') {
@@ -293,9 +302,16 @@ async function operateSelection(action, destinationId) {
       }
     }
     const verb = action === 'move' ? '移動' : '削除';
-    el.bulkStatus.textContent = `${succeeded}件を${verb}しました。${failures.length ? ` ${state.selectedIds.size}件が失敗しました。選択を残しています。\n${failures.join('\n')}` : ''}`;
+    if (draggedId) {
+      if (failures.length) throw new Error(failures[0]);
+      toast(`「${top[0].title || top[0].url}」を「${state.nodes.get(destinationId).title || 'フォルダ'}」へ移動しました。`);
+    } else {
+      el.bulkStatus.textContent = `${succeeded}件を${verb}しました。${failures.length ? ` ${state.selectedIds.size}件が失敗しました。選択を残しています。\n${failures.join('\n')}` : ''}`;
+    }
   } catch (error) {
-    el.bulkStatus.textContent = error.message || '操作できませんでした。';
+    const message = error.message || '操作できませんでした。';
+    if (draggedId) toast(message);
+    else el.bulkStatus.textContent = message;
   } finally {
     state.busy = false;
     await loadTree();
@@ -333,7 +349,7 @@ function navigationButton({label, icon, id, count, depth = 0, folder = false}) {
     button.dataset.folderId = id;
     button.addEventListener('dragover', event => {
       if (!state.busy && state.selecting && state.selectedIds.size &&
-          event.dataTransfer.types.includes('application/x-tabnest-selection') && canMoveTo(id)) {
+          event.dataTransfer.types.includes(selectionMoveType) && canMoveTo(id)) {
         event.preventDefault(); event.dataTransfer.dropEffect = 'move';
         button.classList.add('drop-target');
       }
@@ -341,15 +357,9 @@ function navigationButton({label, icon, id, count, depth = 0, folder = false}) {
     button.addEventListener('dragleave', () => button.classList.remove('drop-target'));
     button.addEventListener('drop', event => {
       button.classList.remove('drop-target');
-      if (!state.selecting || !event.dataTransfer.types.includes('application/x-tabnest-selection')) return;
+      if (!state.selecting || !event.dataTransfer.types.includes(selectionMoveType)) return;
       event.preventDefault();
-      try {
-        const payload = JSON.parse(event.dataTransfer.getData('application/x-tabnest-selection'));
-        if (payload.token !== state.dragToken || !Array.isArray(payload.ids) ||
-            payload.ids.length !== state.selectedIds.size || !payload.ids.every(selectedId => state.selectedIds.has(selectedId))) {
-          throw new Error('different selection');
-        }
-      } catch {
+      if (!matchesSelectionDrag(event.dataTransfer)) {
         el.bulkStatus.textContent = 'ドラッグ元のタブで移動してください。選択した項目は変更していません。';
         return;
       }
@@ -532,6 +542,7 @@ function folderCard(node) {
   });
   card.append(button, svg('chevron', 'icon folder-chevron'));
   selectCard(card, node);
+  enableFolderDrop(card, node.id);
   return card;
 }
 
@@ -547,10 +558,10 @@ function emptyState(headline, message) {
 }
 
 function renderPinned() {
-  const visible = !state.query && ['all','pinned'].includes(state.view);
+  const visible = !state.query.trim() && (state.pinnedIds.length > 0 || state.view === 'pinned');
   el.pinnedSection.hidden = !visible;
   el.pinnedCount.textContent = String(state.pinnedIds.length);
-  if (!visible) return;
+  if (!visible) { el.pins.replaceChildren(); return; }
   const items = state.pinnedIds.map(id => state.nodes.get(id)).filter(x => x?.url && canOpen(x.url));
   const fragment = document.createDocumentFragment();
   if (!items.length) fragment.append(emptyState('まだピン留めがありません', '下の一覧の ☆ を押すと、ここからワンクリックで開けます。'));
@@ -559,6 +570,48 @@ function renderPinned() {
 }
 
 const reorderType = 'application/x-tabnest-reorder';
+const bookmarkMoveType = 'application/x-tabnest-bookmark';
+const selectionMoveType = 'application/x-tabnest-selection';
+
+function enableFolderDrop(card, folderId) {
+  const accepts = event => !state.busy && (
+    (event.dataTransfer.types.includes(bookmarkMoveType) && canMoveTo(folderId, [])) ||
+    (event.dataTransfer.types.includes(selectionMoveType) && state.selecting && canMoveTo(folderId))
+  );
+  card.addEventListener('dragover', event => {
+    if (!accepts(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    card.classList.add('drop-target');
+  });
+  card.addEventListener('dragleave', event => {
+    if (!card.contains(event.relatedTarget)) card.classList.remove('drop-target');
+  });
+  card.addEventListener('drop', event => {
+    card.classList.remove('drop-target');
+    if (!accepts(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer.types.includes(bookmarkMoveType)) {
+      const [token, sourceId] = event.dataTransfer.getData(bookmarkMoveType).split(':');
+      const source = state.nodes.get(sourceId);
+      if (token === state.dragToken && source?.url && canModify(source)) {
+        void operateSelection('move', folderId, sourceId);
+      }
+      return;
+    }
+    if (matchesSelectionDrag(event.dataTransfer)) void operateSelection('move', folderId);
+  });
+}
+
+function matchesSelectionDrag(transfer) {
+  try {
+    const {token, ids} = JSON.parse(transfer.getData(selectionMoveType));
+    return token === state.dragToken && Array.isArray(ids) &&
+      new Set(ids).size === state.selectedIds.size && ids.every(id => state.selectedIds.has(id));
+  } catch {
+    return false;
+  }
+}
 
 async function reorderBookmark(parentId, sourceId, targetId, after) {
   state.busy = true;
@@ -589,7 +642,8 @@ function enableBookmarkReorder(card, node) {
   if (!canModify(node) || parentId !== state.view) return;
   card.draggable = true;
   const accepts = event => !state.busy && !state.selecting && !state.query.trim() &&
-    state.view === parentId && event.dataTransfer.types.includes(reorderType);
+    state.view === parentId && event.dataTransfer.types.includes(reorderType) &&
+    (node.url || !event.dataTransfer.types.includes(bookmarkMoveType));
   const isAfter = event => {
     const bounds = card.getBoundingClientRect();
     return event.clientX >= bounds.left + bounds.width / 2;

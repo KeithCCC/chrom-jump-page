@@ -90,10 +90,11 @@ async function open(roots, prefs = {}, options = {}) {
 }
 const cards = doc => [...doc.querySelectorAll('#bookmarkGrid .bookmark-title')].map(n => n.textContent);
 
-test('folder drag saves the order in Chrome across hidden siblings', async t => {
+test('dropping a bookmark beside another bookmark saves order across hidden siblings', async t => {
   const roots = tree();
   const bar = roots[0].children[1];
   bar.children.splice(1, 0, { ...link('99', '1', 'Hidden'), url: 'javascript:void(0)' });
+  bar.children.push(link('13', '1', 'Last site'));
   const app = await open(roots); t.after(app.close);
   const card = id => app.doc.querySelector(`#bookmarkGrid [data-id="${id}"]`);
   const data = new Map();
@@ -106,12 +107,12 @@ test('folder drag saves the order in Chrome across hidden siblings', async t => 
     return event;
   };
   dispatch('10', 'dragstart', 1);
-  assert.equal(dispatch('11', 'dragover', 1).defaultPrevented, true);
-  assert.equal(card('11').dataset.insert, 'after');
-  dispatch('11', 'drop', 1);
+  assert.equal(dispatch('13', 'dragover', 1).defaultPrevented, true);
+  assert.equal(card('13').dataset.insert, 'after');
+  dispatch('13', 'drop', 1);
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(bar.children.map(node => node.id), ['99', '11', '10']);
-  assert.deepEqual(cards(app.doc), ['Subfolder', 'Bar site']);
+  assert.deepEqual(bar.children.map(node => node.id), ['99', '11', '13', '10']);
+  assert.deepEqual(cards(app.doc), ['Subfolder', 'Last site', 'Bar site']);
 });
 const nav = (doc, label) => [...doc.querySelectorAll('.nav-entry')].find(n => n.querySelector('.nav-name').textContent === label);
 
@@ -403,4 +404,29 @@ test('card label selects directly and remains available after clearing the last 
   app.doc.querySelector('#clearSelectionBtn').click();
   assert.equal(app.doc.querySelector('#bulkToolbar').hidden, true);
   assert.ok(app.doc.querySelector('.bookmark-card .item-select'));
+});
+
+function dragBetween(app, source, target) {
+  const data = new Map();
+  const transfer = { get types() { return [...data.keys()]; }, setData: (type, value) => data.set(type, value), getData: type => data.get(type) || '' };
+  for (const [node, type] of [[source, 'dragstart'], [target, 'dragover'], [target, 'drop'], [source, 'dragend']]) {
+    const event = new app.w.MouseEvent(type, { bubbles: true, cancelable: true });
+    Object.defineProperty(event, 'dataTransfer', { value: transfer });
+    node.dispatchEvent(event);
+  }
+}
+
+test('an unchecked bookmark dropped on a right-pane folder moves there and keeps its pin', async t => {
+  const app = await open(tree(), { tabnestInitialized: true, tabnestPinnedIds: ['10'] }); t.after(app.close);
+  dragBetween(app, app.doc.querySelector('.bookmark-card[data-id="10"]'), app.doc.querySelector('.folder-card[data-id="11"] .folder-link'));
+  await until(() => app.find('10').parentId === '11');
+  assert.deepEqual(app.prefs.tabnestPinnedIds, ['10']);
+});
+
+test('new tabs show pinned links immediately beneath the search box', async t => {
+  const app = await open(tree(), { tabnestInitialized: true, tabnestPinnedIds: ['20', '10'] }); t.after(app.close);
+  const section = app.doc.querySelector('#pinnedSection');
+  assert.equal(section.hidden, false);
+  assert.equal(section.previousElementSibling.className, 'hero-search');
+  assert.deepEqual([...section.querySelectorAll('.pin-title')].map(n => n.textContent), ['Outside site', 'Bar site']);
 });
