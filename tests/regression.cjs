@@ -430,3 +430,24 @@ test('new tabs show pinned links immediately beneath the search box', async t =>
   assert.equal(section.previousElementSibling.className, 'hero-search');
   assert.deepEqual([...section.querySelectorAll('.pin-title')].map(n => n.textContent), ['Outside site', 'Bar site']);
 });
+
+for (const view of ['folder', 'search', 'pinned']) {
+  test(`unchecked ${view} card moves directly to a left-sidebar folder`, async t => {
+    const app = await open(tree(), { tabnestInitialized: true, tabnestPinnedIds: ['10'] });
+    t.after(app.close);
+    if (view === 'search') {
+      const search = app.doc.querySelector('#searchInput');
+      search.value = 'Bar site';
+      search.dispatchEvent(new app.w.Event('input'));
+    }
+    const selector = view === 'pinned' ? '#pinnedGrid .pin-card' : '#bookmarkGrid .bookmark-card';
+    const source = app.doc.querySelector(`${selector}[data-id="10"]`);
+    const target = app.doc.querySelector('[data-folder-id="2"]');
+    assert.equal(app.doc.querySelectorAll('.item-select:checked').length, 0);
+    dragBetween(app, source, target);
+    await until(() => app.find('10').parentId === '2');
+    assert.deepEqual(app.prefs.tabnestPinnedIds, ['10']);
+    assert.equal(app.doc.querySelector('#selectionCount').textContent, '0件選択中');
+    assert.equal(app.doc.querySelector('#browseTitle').textContent, view === 'search' ? '検索結果' : 'ブックマーク バー');
+  });
+}

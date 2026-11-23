@@ -249,7 +249,7 @@ function selectCard(card, node) {
     renderNav(); renderSelection();
   });
   card.addEventListener('dragend', () => {
-    el.bookmarks.querySelectorAll('.drop-target').forEach(target => target.classList.remove('drop-target'));
+    document.querySelectorAll('.drop-target').forEach(target => target.classList.remove('drop-target'));
   });
 }
 
@@ -347,24 +347,7 @@ function navigationButton({label, icon, id, count, depth = 0, folder = false}) {
   });
   if (folder) {
     button.dataset.folderId = id;
-    button.addEventListener('dragover', event => {
-      if (!state.busy && state.selecting && state.selectedIds.size &&
-          event.dataTransfer.types.includes(selectionMoveType) && canMoveTo(id)) {
-        event.preventDefault(); event.dataTransfer.dropEffect = 'move';
-        button.classList.add('drop-target');
-      }
-    });
-    button.addEventListener('dragleave', () => button.classList.remove('drop-target'));
-    button.addEventListener('drop', event => {
-      button.classList.remove('drop-target');
-      if (!state.selecting || !event.dataTransfer.types.includes(selectionMoveType)) return;
-      event.preventDefault();
-      if (!matchesSelectionDrag(event.dataTransfer)) {
-        el.bulkStatus.textContent = 'ドラッグ元のタブで移動してください。選択した項目は変更していません。';
-        return;
-      }
-      operateSelection('move', id);
-    });
+    enableFolderDrop(button, id);
     if (state.selecting && state.selectedIds.size) {
       const row = document.createElement('div'); row.className = 'folder-nav-row';
       const move = document.createElement('button'); move.type = 'button';
